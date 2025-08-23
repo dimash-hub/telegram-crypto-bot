@@ -12,3 +12,11 @@
     "ws": "^8.13.0"
   }
 }
+{
+  "dependencies": {
+    "node-telegram-bot-api": "^0.53.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
