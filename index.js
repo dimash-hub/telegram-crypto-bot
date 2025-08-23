@@ -11,3 +11,8 @@ function sendWhaleSignal(msg) { if (!TELEGRAM_TOKEN || !CHAT_ID) return; bot.sen
 setInterval(() => { sendWhaleSignal("🐋 Тест: бот жив и JEETS сигнал работает!"); }, 30000);
 
 app.listen(PORT, () => console.log(Server listening on port ${PORT}));
+bot.on('message', (msg) => {
+  if (msg.text === '/start') {
+    bot.sendMessage(msg.chat.id, 'Привет! Я JEETS Whale Tracker!');
+  }
+});
