@@ -1,6 +1,6 @@
-const express = require("express");
-const TelegramBot = require("node-telegram-bot-api");
-const axios = require("axios");
+import express from "express";
+import TelegramBot from "node-telegram-bot-api";
+import axios from "axios";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,7 +38,6 @@ async function checkWhaleActivity() {
   }
 }
 
-// Проверка каждые 5 минут
 setInterval(checkWhaleActivity, 300000);
 
 bot.on("message", (msg) => {
