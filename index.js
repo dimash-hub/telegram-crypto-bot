@@ -11,7 +11,10 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const WHALE_ADDRESS = process.env.WHALE_ADDRESS;
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
-
+console.log('TELEGRAM_TOKEN:', TELEGRAM_TOKEN);
+console.log('CHAT_ID:', CHAT_ID);
+console.log('WHALE_ADDRESS:', WHALE_ADDRESS);
+console.log('ETHERSCAN_API_KEY:', ETHERSCAN_API_KEY);
 if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !ETHERSCAN_API_KEY) {
   console.log("Missing environment variables!");
   process.exit(1);
