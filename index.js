@@ -7,69 +7,61 @@ const PORT = process.env.PORT || 3000;
 
 app.get("/", (_req, res) => res.send("JEETS Whale Bot is alive on Render!"));
 
-// --- Environment Variables ---
+// Environment переменные
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const SOLANA_API_KEY = process.env.SOLANA_API_KEY;
-const JEETS_TOKEN_ADDRESS = process.env.JEETS_TOKEN_ADDRESS;
+const WHALE_ADDRESS = process.env.WHALE_ADDRESS; // адрес кита
+const JEETS_TOKEN_ADDRESS = process.env.JEETS_TOKEN_ADDRESS; // адрес токена Jeets
+const SOLANA_API_KEY = process.env.SOLANA_API_KEY; // твой API ключ Solana
 
-if (!TELEGRAM_TOKEN || !CHAT_ID || !SOLANA_API_KEY || !JEETS_TOKEN_ADDRESS) {
+// Проверка переменных
+console.log("TELEGRAM_TOKEN:", TELEGRAM_TOKEN);
+console.log("CHAT_ID:", CHAT_ID);
+console.log("WHALE_ADDRESS:", WHALE_ADDRESS);
+console.log("JEETS_TOKEN_ADDRESS:", JEETS_TOKEN_ADDRESS);
+console.log("SOLANA_API_KEY:", SOLANA_API_KEY);
+
+if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !JEETS_TOKEN_ADDRESS || !SOLANA_API_KEY) {
   console.log("❌ Missing environment variables!");
   process.exit(1);
 }
 
-// --- Telegram Bot ---
+// Telegram бот
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 function sendWhaleSignal(msg) {
   bot.sendMessage(CHAT_ID, msg);
 }
 
-// --- Track Jeets transactions on Solana ---
-let lastSignature = null; // Для хранения последней транзакции, чтобы не слать дубли
-
-async function checkJeetsActivity() {
+// Функция проверки транзакций кита по токену Jeets
+async function checkWhaleActivity() {
   try {
     const response = await axios.get(
-      `https://api.solana.com`, // Вставь здесь свой endpoint Solana API, если он другой
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SOLANA_API_KEY}`
-        },
-        data: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getSignaturesForAddress",
-          params: [JEETS_TOKEN_ADDRESS, { limit: 1 }]
-        })
-      }
+      `https://public-api.solscan.io/account/tokens?account=${WHALE_ADDRESS}`
     );
 
-    const signatures = response.data.result;
-    if (signatures && signatures.length > 0) {
-      const latestTx = signatures[0].signature;
+    const tokens = response.data;
+    const jeetsToken = tokens.find(token => token.tokenAddress === JEETS_TOKEN_ADDRESS);
 
-      if (latestTx !== lastSignature) {
-        lastSignature = latestTx;
-        sendWhaleSignal(`🐋 Новая транзакция Jeets! Signature: ${latestTx}`);
-      }
+    if (jeetsToken && parseFloat(jeetsToken.tokenAmount.uiAmount) > 0) {
+      sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} держит Jeets: ${jeetsToken.tokenAmount.uiAmount}`);
+    } else {
+      console.log("Нет движения по Jeets для кита сейчас.");
     }
+
   } catch (error) {
-    console.log("Error checking Jeets activity:", error.message);
+    console.log("Error checking whale activity:", error.message);
   }
 }
 
 // Проверка каждые 5 минут
-setInterval(checkJeetsActivity, 300000);
+setInterval(checkWhaleActivity, 300000);
 
-// --- Telegram командa /start ---
+// Обработка команд в Telegram
 bot.on("message", (msg) => {
   if (msg.text === "/start") {
-    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker на Solana! Следую за транзакциями Jeets...");
+    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker! Следую за китами...");
   }
 });
 
-// --- Запуск сервера ---
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
