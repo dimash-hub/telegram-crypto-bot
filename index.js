@@ -10,31 +10,35 @@ app.get("/", (_req, res) => res.send("JEETS Whale Bot is alive on Render!"));
 // Environment переменные
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const WHALE_ADDRESS = process.env.WHALE_ADDRESS;
+const WHALE_ADDRESS = process.env.WHALE_ADDRESS; 
 const JEETS_TOKEN_ADDRESS = process.env.JEETS_TOKEN_ADDRESS;
-const SOLANA_API_KEY = process.env.SOLANA_API_KEY;
 
-// Проверка переменных
-if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !JEETS_TOKEN_ADDRESS || !SOLANA_API_KEY) {
+if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !JEETS_TOKEN_ADDRESS) {
   console.log("❌ Missing environment variables!");
   process.exit(1);
 }
 
 // Telegram бот
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-function sendWhaleSignal(msg) { bot.sendMessage(CHAT_ID, msg); }
 
-// Для хранения последнего баланса токена
-let lastBalance = 0;
+// Для хранения уже обработанных транзакций
+let processedTxs = new Set();
 
-// Получение цены Jeets в USD (пример через CoinGecko)
+// Функция отправки сигнала
+function sendWhaleSignal(msg) {
+  bot.sendMessage(CHAT_ID, msg);
+}
+
+// Функция получения курса Jeets в USD с CoinGecko
 async function getJeetsPriceUSD() {
   try {
-    const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=jeets&vs_currencies=usd');
-    return response.data.jeets.usd || 0;
+    const response = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=jeets&vs_currencies=usd"
+    );
+    return response.data.jeets.usd || 1; // если не найдено, ставим 1
   } catch (error) {
     console.log("Error fetching Jeets price:", error.message);
-    return 0;
+    return 1;
   }
 }
 
@@ -42,28 +46,40 @@ async function getJeetsPriceUSD() {
 async function checkWhaleActivity() {
   try {
     const response = await axios.get(
-      `https://public-api.solscan.io/account/tokens?account=${WHALE_ADDRESS}`,
-      { headers: { "token": SOLANA_API_KEY } }
+      `https://public-api.solscan.io/account/tokens?account=${WHALE_ADDRESS}`
     );
 
     const tokens = response.data;
     const jeetsToken = tokens.find(token => token.tokenAddress === JEETS_TOKEN_ADDRESS);
 
-    if (jeetsToken) {
-      const currentBalance = parseFloat(jeetsToken.tokenAmount.uiAmount);
-      const change = currentBalance - lastBalance;
-      const priceUSD = await getJeetsPriceUSD();
-      const changeUSD = Math.abs(change * priceUSD);
+    if (!jeetsToken) return;
 
-      // Сигналим только если движение ≥ 100$
-      if (changeUSD >= 100) {
-        lastBalance = currentBalance;
-        sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} ${change > 0 ? 'купил' : 'продал'} ${Math.abs(change)} Jeets (~$${changeUSD.toFixed(2)}). Текущий баланс: ${currentBalance}`);
-      } else {
-        console.log(`Движение по Jeets < $100: ~$${changeUSD.toFixed(2)}, сигнал не отправлен.`);
+    const jeetsPrice = await getJeetsPriceUSD();
+
+    // Проходим по транзакциям кита
+    const txsResponse = await axios.get(
+      `https://public-api.solscan.io/account/transactions?account=${WHALE_ADDRESS}&limit=20`
+    );
+
+    const txs = txsResponse.data;
+
+    for (const tx of txs) {
+      if (processedTxs.has(tx.txHash)) continue; // уже обработали
+      processedTxs.add(tx.txHash);
+
+      const jeetsTransfer = tx.innerTransfers?.find(
+        t => t.tokenAddress === JEETS_TOKEN_ADDRESS
+      );
+
+      if (!jeetsTransfer) continue;
+
+      const amount = parseFloat(jeetsTransfer.uiAmount);
+      const totalUSD = amount * jeetsPrice;
+
+      if (totalUSD >= 50) {
+        const type = jeetsTransfer.type === "deposit" ? "Купил" : "Продал";
+        sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} ${type} ${amount} JEETS (~$${totalUSD.toFixed(2)})`);
       }
-    } else {
-      console.log("Кит не держит токен Jeets или неверный адрес токена.");
     }
 
   } catch (error) {
@@ -74,10 +90,23 @@ async function checkWhaleActivity() {
 // Проверка каждые 5 минут
 setInterval(checkWhaleActivity, 300000);
 
-// Обработка команд в Telegram
+// Самопинг для бесплатного Render
+async function selfPing() {
+  try {
+    await axios.get(`http://localhost:${PORT}/`);
+    console.log("✅ Self-ping successful, Render won't sleep");
+  } catch (error) {
+    console.log("❌ Self-ping failed:", error.message);
+  }
+}
+
+// Пинг каждые 10 минут
+setInterval(selfPing, 600000);
+
+// Обработка команд Telegram
 bot.on("message", (msg) => {
   if (msg.text === "/start") {
-    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker! Следую за китами по токену Jeets, сигналы только при движении ≥ $100.");
+    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker! Следую за китами...");
   }
 });
 
