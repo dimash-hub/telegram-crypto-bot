@@ -5,59 +5,63 @@ import axios from "axios";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Простой route для проверки
 app.get("/", (_req, res) => res.send("JEETS Whale Bot is alive on Render!"));
 
-// Переменные окружения
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const WHALE_ADDRESS = process.env.WHALE_ADDRESS;
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
+const JEETS_MINT_ADDRESS = process.env.JEETS_MINT_ADDRESS;
 
-// Временная проверка переменных
-console.log('TELEGRAM_TOKEN:', TELEGRAM_TOKEN);
-console.log('CHAT_ID:', CHAT_ID);
-console.log('WHALE_ADDRESS:', WHALE_ADDRESS);
-console.log('ETHERSCAN_API_KEY:', ETHERSCAN_API_KEY);
-
-if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !ETHERSCAN_API_KEY) {
-  console.error("❌ Missing environment variables!");
+if (!TELEGRAM_TOKEN || !CHAT_ID || !WHALE_ADDRESS || !JEETS_MINT_ADDRESS) {
+  console.log("Missing environment variables!");
   process.exit(1);
 }
 
-// Создаем Telegram бота
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-// Функция отправки сигнала
 function sendWhaleSignal(msg) {
   bot.sendMessage(CHAT_ID, msg);
 }
 
-// Проверка активности кита каждые 5 минут
+// Храним последние обработанные транзакции
+let processedTxs = new Set();
+
 async function checkWhaleActivity() {
   try {
+    // Получаем последние токен-транзакции адреса
     const response = await axios.get(
-      `https://api.etherscan.io/api?module=account&action=txlist&address=${WHALE_ADDRESS}&startblock=0&endblock=99999999&sort=desc&apikey=${ETHERSCAN_API_KEY}`
+      `https://public-api.solscan.io/account/tokens?account=${WHALE_ADDRESS}`
     );
 
-    const transactions = response.data.result;
-    if (transactions.length > 0) {
-      const latestTx = transactions[0];
-      sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} совершил транзакцию! Hash: ${latestTx.hash}`);
+    const tokens = response.data.data;
+    const jeetsToken = tokens.find(t => t.mint === JEETS_MINT_ADDRESS);
+
+    if (!jeetsToken) return; // если нет JEETS, ничего не делаем
+
+    // Проверяем изменения количества
+    const balance = jeetsToken.tokenAmount.uiAmount;
+    const txs = jeetsToken.transactions || [];
+
+    for (let tx of txs) {
+      if (!processedTxs.has(tx.signature)) {
+        processedTxs.add(tx.signature);
+        sendWhaleSignal(
+          `🐋 Кит ${WHALE_ADDRESS} совершил транзакцию с JEETS!\nHash: ${tx.signature}\nИзменение: ${tx.tokenAmountChange} токенов\nБаланс: ${balance}`
+        );
+      }
     }
+
   } catch (error) {
-    console.error("Error checking whale activity:", error.message);
+    console.log("Error checking whale activity:", error.message);
   }
 }
 
-setInterval(checkWhaleActivity, 300000);
+setInterval(checkWhaleActivity, 60000); // Проверка каждую минуту
 
-// Ответ на команду /start
 bot.on("message", (msg) => {
   if (msg.text === "/start") {
-    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker! Следую за китами...");
+    bot.sendMessage(msg.chat.id, "Привет! Я JEETS Whale Tracker на Solana! Следую за китами...");
   }
 });
 
-// Запуск сервера
-app.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
