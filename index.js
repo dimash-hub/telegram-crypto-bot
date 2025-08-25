@@ -12,7 +12,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const WHALE_ADDRESS = process.env.WHALE_ADDRESS; // адрес кита
 const JEETS_TOKEN_ADDRESS = process.env.JEETS_TOKEN_ADDRESS; // адрес токена Jeets
-const SOLANA_API_KEY = process.env.SOLANA_API_KEY; // твой API ключ Solana
+const SOLANA_API_KEY = process.env.SOLANA_API_KEY; // API ключ Solana
 
 // Проверка переменных
 console.log("TELEGRAM_TOKEN:", TELEGRAM_TOKEN);
@@ -33,6 +33,22 @@ function sendWhaleSignal(msg) {
   bot.sendMessage(CHAT_ID, msg);
 }
 
+// Для хранения предыдущего баланса
+let previousBalance = 0;
+
+// Функция получения текущей цены Jeets (USD)
+async function getJeetsPriceUSD() {
+  try {
+    const response = await axios.get(
+      `https://public-api.solscan.io/token/market?tokenAddress=${JEETS_TOKEN_ADDRESS}`
+    );
+    return parseFloat(response.data.priceUsdt) || 0;
+  } catch (error) {
+    console.log("Ошибка получения цены Jeets:", error.message);
+    return 0;
+  }
+}
+
 // Функция проверки транзакций кита по токену Jeets
 async function checkWhaleActivity() {
   try {
@@ -43,10 +59,29 @@ async function checkWhaleActivity() {
     const tokens = response.data;
     const jeetsToken = tokens.find(token => token.tokenAddress === JEETS_TOKEN_ADDRESS);
 
-    if (jeetsToken && parseFloat(jeetsToken.tokenAmount.uiAmount) > 0) {
-      sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} держит Jeets: ${jeetsToken.tokenAmount.uiAmount}`);
+    const currentBalance = jeetsToken ? parseFloat(jeetsToken.tokenAmount.uiAmount) : 0;
+    const priceUSD = await getJeetsPriceUSD();
+    const balanceUSD = currentBalance * priceUSD;
+
+    if (previousBalance === 0) previousBalance = currentBalance; // при первом запуске
+
+    if (currentBalance !== previousBalance) {
+      const change = currentBalance - previousBalance;
+      const changeUSD = change * priceUSD;
+
+      if (Math.abs(changeUSD) >= 100) { // фильтр движения от $100
+        if (change > 0) {
+          sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} купил Jeets: +${change} токенов (~$${changeUSD.toFixed(2)})\nОбщий баланс: ${currentBalance} (~$${balanceUSD.toFixed(2)})`);
+        } else {
+          sendWhaleSignal(`🐋 Кит ${WHALE_ADDRESS} продал Jeets: ${change} токенов (~$${changeUSD.toFixed(2)})\nОбщий баланс: ${currentBalance} (~$${balanceUSD.toFixed(2)})`);
+        }
+      } else {
+        console.log(`Движение кита меньше $100 (${changeUSD.toFixed(2)}), сигнал не отправлен.`);
+      }
+
+      previousBalance = currentBalance;
     } else {
-      console.log("Нет движения по Jeets для кита сейчас.");
+      console.log("Баланс не изменился, сигнал не отправлен.");
     }
 
   } catch (error) {
